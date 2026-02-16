@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
 // Limiares de volume (m³)
-const VOLUME_HIGH = 1.0;  // X - acima = vermelho
-const VOLUME_MID = 0.5;   // Y - entre Y e X = verde, abaixo = azul
+// Com dimensões 0.1–0.5m, volume varia de ~0.001 a ~0.125 m³
+const VOLUME_HIGH = 0.05;  // X - acima = vermelho (caixas grandes)
+const VOLUME_MID = 0.015;  // Y - entre Y e X = verde, abaixo = azul
 
 // Faixa de dimensões (metros)
 const DIM_MIN = 0.1;
