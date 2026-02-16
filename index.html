@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR - Cubagem e Picking</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="overlay">
+        <header id="header">
+            <h1>Cubagem & Picking AR</h1>
+            <p id="status-msg">Toque em "Iniciar AR" para começar</p>
+        </header>
+
+        <div id="hud" class="hidden">
+            <div id="box-info">
+                <span id="box-dims"></span>
+                <span id="box-vol"></span>
+                <span id="box-color-indicator"></span>
+            </div>
+            <div id="stack-count">Caixas: <span id="count">0</span></div>
+            <div id="mode-label">Modo: <span id="current-mode">Cubagem</span></div>
+        </div>
+
+        <div id="controls" class="hidden">
+            <button id="btn-new-box" class="btn">Nova Caixa</button>
+            <button id="btn-place" class="btn btn-primary">Posicionar</button>
+            <button id="btn-mode" class="btn btn-secondary">Modo: Picking</button>
+            <button id="btn-reset" class="btn btn-danger">Resetar</button>
+        </div>
+
+        <button id="btn-start-ar" class="btn btn-ar">Iniciar AR</button>
+
+        <div id="feedback" class="hidden"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
