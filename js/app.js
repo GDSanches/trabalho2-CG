@@ -3,35 +3,33 @@ import { HitTestManager } from './hitTest.js';
 import { CubagemModule } from './cubagem.js';
 import { PickingModule } from './picking.js';
 
-// ========== Estado da Aplicação ==========
+// ========== Estado ==========
 let renderer, scene, camera;
 let hitTestManager;
 let cubagemModule, pickingModule;
-let currentMode = 'cubagem'; // 'cubagem' ou 'picking'
+let currentMode = 'cubagem';
 let xrSession = null;
-let referenceSpace = null;
 
-// ========== Elementos do DOM ==========
-const overlay = document.getElementById('overlay');
-const btnStartAR = document.getElementById('btn-start-ar');
-const btnNewBox = document.getElementById('btn-new-box');
-const btnPlace = document.getElementById('btn-place');
-const btnMode = document.getElementById('btn-mode');
-const btnReset = document.getElementById('btn-reset');
-const hud = document.getElementById('hud');
-const controls = document.getElementById('controls');
-const statusMsg = document.getElementById('status-msg');
-const boxDims = document.getElementById('box-dims');
-const boxVol = document.getElementById('box-vol');
-const boxColorIndicator = document.getElementById('box-color-indicator');
-const countEl = document.getElementById('count');
+// ========== DOM ==========
+const overlay       = document.getElementById('overlay');
+const btnStartAR    = document.getElementById('btn-start-ar');
+const btnNewBox     = document.getElementById('btn-new-box');
+const btnPlace      = document.getElementById('btn-place');
+const btnMode       = document.getElementById('btn-mode');
+const btnReset      = document.getElementById('btn-reset');
+const hud           = document.getElementById('hud');
+const controls      = document.getElementById('controls');
+const statusMsg     = document.getElementById('status-msg');
+const boxDims       = document.getElementById('box-dims');
+const boxVol        = document.getElementById('box-vol');
+const boxColorInd   = document.getElementById('box-color-indicator');
+const countEl       = document.getElementById('count');
 const currentModeEl = document.getElementById('current-mode');
-const feedbackEl = document.getElementById('feedback');
+const feedbackEl    = document.getElementById('feedback');
 
 // ========== Inicialização Three.js ==========
 function initThreeJS() {
     scene = new THREE.Scene();
-
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -40,20 +38,14 @@ function initThreeJS() {
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    // Iluminação
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(0.5, 1, 0.5);
+    scene.add(dirLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(0.5, 1, 0.5);
-    scene.add(directionalLight);
-
-    // Módulos
     hitTestManager = new HitTestManager(renderer, scene);
-    cubagemModule = new CubagemModule(scene);
-    pickingModule = new PickingModule(scene);
-
-    // Ativa módulo inicial
+    cubagemModule  = new CubagemModule(scene);
+    pickingModule  = new PickingModule(scene);
     cubagemModule.activate();
 
     window.addEventListener('resize', () => {
@@ -65,16 +57,10 @@ function initThreeJS() {
 
 // ========== WebXR ==========
 async function startARSession() {
-    if (!navigator.xr) {
-        showFeedback('WebXR não suportado neste navegador!', 'error');
-        return;
-    }
+    if (!navigator.xr) { showFeedback('WebXR não suportado!', 'error'); return; }
 
     const supported = await navigator.xr.isSessionSupported('immersive-ar');
-    if (!supported) {
-        showFeedback('Sessão AR não suportada neste dispositivo!', 'error');
-        return;
-    }
+    if (!supported) { showFeedback('AR não suportado neste dispositivo!', 'error'); return; }
 
     try {
         xrSession = await navigator.xr.requestSession('immersive-ar', {
@@ -86,69 +72,57 @@ async function startARSession() {
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(xrSession);
 
-        referenceSpace = await xrSession.requestReferenceSpace('local');
+        await hitTestManager.requestHitTestSource(xrSession);
 
-        // Solicitar hit test source
-        await hitTestManager.requestHitTestSource(xrSession, referenceSpace);
-
-        // UI
         btnStartAR.classList.add('hidden');
         hud.classList.remove('hidden');
         controls.classList.remove('hidden');
         statusMsg.textContent = 'Aponte para uma superfície plana';
 
-        // Iniciar loop de renderização
         renderer.setAnimationLoop(onXRFrame);
-
         xrSession.addEventListener('end', onSessionEnd);
     } catch (err) {
-        showFeedback(`Erro ao iniciar AR: ${err.message}`, 'error');
+        showFeedback(`Erro: ${err.message}`, 'error');
     }
 }
 
 function onSessionEnd() {
     xrSession = null;
-    referenceSpace = null;
     btnStartAR.classList.remove('hidden');
     hud.classList.add('hidden');
     controls.classList.add('hidden');
-    statusMsg.textContent = 'Sessão AR encerrada. Toque para reiniciar.';
+    statusMsg.textContent = 'Sessão encerrada. Toque para reiniciar.';
     renderer.setAnimationLoop(null);
 }
 
+// ========== Loop de Renderização ==========
 function onXRFrame(timestamp, frame) {
     if (!frame) return;
 
-    const session = frame.session;
     const refSpace = renderer.xr.getReferenceSpace();
-
-    // Atualizar hit test
     hitTestManager.update(frame, refSpace);
 
-    // Atualizar status
-    if (hitTestManager.isHitDetected()) {
-        const activeModule = getActiveModule();
-        const isPlaced = currentMode === 'cubagem'
-            ? cubagemModule.isPalletPlaced()
-            : pickingModule.isTruckPlaced();
+    const module = getActiveModule();
+    const placed  = isContainerPlaced();
 
-        if (!isPlaced) {
+    if (hitTestManager.isHitDetected()) {
+        const worldPos = hitTestManager.getHitPosition();
+
+        if (placed && module.currentBox) {
+            // Preview segue onde a câmera aponta dentro dos limites
+            module.updatePreviewFromWorld(worldPos);
+        } else if (!placed) {
             statusMsg.textContent = 'Superfície detectada! Toque "Posicionar" para colocar ' +
-                (currentMode === 'cubagem' ? 'o palete' : 'a caçamba');
+                (currentMode === 'cubagem' ? 'o palete.' : 'a caçamba.');
         }
-    } else {
-        const isPlaced = currentMode === 'cubagem'
-            ? cubagemModule.isPalletPlaced()
-            : pickingModule.isTruckPlaced();
-        if (!isPlaced) {
-            statusMsg.textContent = 'Aponte para uma superfície plana...';
-        }
+    } else if (!placed) {
+        statusMsg.textContent = 'Aponte para uma superfície plana...';
     }
 
     renderer.render(scene, camera);
 }
 
-// ========== Módulo Ativo ==========
+// ========== Helpers ==========
 function getActiveModule() {
     return currentMode === 'cubagem' ? cubagemModule : pickingModule;
 }
@@ -159,40 +133,25 @@ function isContainerPlaced() {
         : pickingModule.isTruckPlaced();
 }
 
-// ========== Feedback Visual ==========
-function showFeedback(message, type = 'success') {
-    feedbackEl.textContent = message;
+function showFeedback(msg, type = 'success') {
+    feedbackEl.textContent = msg;
     feedbackEl.className = type;
     feedbackEl.classList.remove('hidden');
-
-    // Reiniciar animação
     feedbackEl.style.animation = 'none';
-    feedbackEl.offsetHeight; // trigger reflow
+    feedbackEl.offsetHeight; // reflow
     feedbackEl.style.animation = '';
-
-    setTimeout(() => {
-        feedbackEl.classList.add('hidden');
-    }, 2000);
+    setTimeout(() => feedbackEl.classList.add('hidden'), 2200);
 }
 
-// ========== Atualizar HUD ==========
 function updateHUD(box) {
-    if (box) {
-        boxDims.textContent = box.getDimsText();
-        boxVol.textContent = box.getVolumeText();
-        boxColorIndicator.style.backgroundColor = box.getCSSColor();
-        boxColorIndicator.title = box.getColorName();
-    } else {
-        boxDims.textContent = '--';
-        boxVol.textContent = '--';
-        boxColorIndicator.style.backgroundColor = 'transparent';
-    }
-
-    const module = getActiveModule();
-    countEl.textContent = module.getBoxCount();
+    boxDims.textContent       = box ? box.getDimsText()   : '--';
+    boxVol.textContent        = box ? box.getVolumeText() : '--';
+    boxColorInd.style.backgroundColor = box ? box.getCSSColor() : 'transparent';
+    boxColorInd.title         = box ? box.getColorName()  : '';
+    countEl.textContent       = getActiveModule().getBoxCount();
 }
 
-// ========== Event Handlers ==========
+// ========== Botões ==========
 btnStartAR.addEventListener('click', () => {
     initThreeJS();
     startARSession();
@@ -200,39 +159,39 @@ btnStartAR.addEventListener('click', () => {
 
 btnNewBox.addEventListener('click', () => {
     if (!isContainerPlaced()) {
-        showFeedback('Posicione o ' + (currentMode === 'cubagem' ? 'palete' : 'caminhão') + ' primeiro!', 'error');
+        showFeedback(
+            'Posicione o ' + (currentMode === 'cubagem' ? 'palete' : 'caminhão') + ' primeiro!',
+            'error'
+        );
         return;
     }
-
     const module = getActiveModule();
     const box = module.generateNewBox();
     updateHUD(box);
-    statusMsg.textContent = `Caixa ${box.getColorName()} gerada! Toque na tela para mudar posição, ou "Posicionar" para empilhar.`;
+    statusMsg.textContent = `Caixa ${box.getColorName()} (${box.getVolumeText()}) — aponte onde quer colocar e toque "Posicionar".`;
 });
 
 btnPlace.addEventListener('click', () => {
     const module = getActiveModule();
 
-    // Se o container ainda não foi colocado, posicionar com hit test
+    // 1. Colocar o container (palete ou caçamba)
     if (!isContainerPlaced()) {
         const pos = hitTestManager.getHitPosition();
-        if (!pos) {
-            showFeedback('Nenhuma superfície detectada!', 'error');
-            return;
-        }
+        if (!pos) { showFeedback('Nenhuma superfície detectada!', 'error'); return; }
 
         if (currentMode === 'cubagem') {
             cubagemModule.placePallet(pos);
             statusMsg.textContent = 'Palete posicionado! Gere uma nova caixa.';
+            showFeedback('Palete posicionado!', 'success');
         } else {
             pickingModule.placeTruck(pos);
             statusMsg.textContent = 'Caçamba posicionada! Gere uma nova caixa.';
+            showFeedback('Caçamba posicionada!', 'success');
         }
-        showFeedback(currentMode === 'cubagem' ? 'Palete posicionado!' : 'Caçamba posicionada!', 'success');
         return;
     }
 
-    // Se há uma caixa ativa, tentar empilhar
+    // 2. Empilhar caixa
     if (!module.currentBox) {
         showFeedback('Gere uma nova caixa primeiro!', 'error');
         return;
@@ -242,28 +201,11 @@ btnPlace.addEventListener('click', () => {
     if (result.success) {
         showFeedback(result.message, 'success');
         updateHUD(null);
-        statusMsg.textContent = 'Caixa posicionada! Gere outra ou mude de coluna.';
+        statusMsg.textContent = 'Caixa posicionada! Gere outra.';
     } else {
         showFeedback(result.message, 'error');
     }
-
     countEl.textContent = module.getBoxCount();
-});
-
-// Toque na tela (fora dos botões) para ciclar coluna
-document.addEventListener('click', (e) => {
-    // Ignorar cliques nos botões
-    if (e.target.closest('#controls') || e.target.closest('#btn-start-ar')) return;
-
-    if (!isContainerPlaced()) return;
-
-    const module = getActiveModule();
-    if (!module.currentBox) return;
-
-    const stackIdx = module.cycleStack();
-    if (stackIdx !== undefined) {
-        statusMsg.textContent = `Coluna ${stackIdx + 1} selecionada`;
-    }
 });
 
 btnMode.addEventListener('click', () => {
@@ -273,20 +215,17 @@ btnMode.addEventListener('click', () => {
         pickingModule.activate();
         btnMode.textContent = 'Modo: Cubagem';
         currentModeEl.textContent = 'Picking';
-        statusMsg.textContent = pickingModule.isTruckPlaced()
-            ? 'Modo Picking ativo. Gere uma caixa.'
-            : 'Modo Picking. Aponte para uma superfície e posicione a caçamba.';
     } else {
         currentMode = 'cubagem';
         pickingModule.deactivate();
         cubagemModule.activate();
         btnMode.textContent = 'Modo: Picking';
         currentModeEl.textContent = 'Cubagem';
-        statusMsg.textContent = cubagemModule.isPalletPlaced()
-            ? 'Modo Cubagem ativo. Gere uma caixa.'
-            : 'Modo Cubagem. Aponte para uma superfície e posicione o palete.';
     }
     updateHUD(null);
+    statusMsg.textContent = isContainerPlaced()
+        ? 'Gere uma nova caixa.'
+        : 'Aponte para uma superfície e toque "Posicionar".';
 });
 
 btnReset.addEventListener('click', () => {

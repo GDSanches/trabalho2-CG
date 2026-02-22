@@ -25,7 +25,7 @@ export class HitTestManager {
         return reticle;
     }
 
-    async requestHitTestSource(session, referenceSpace) {
+    async requestHitTestSource(session) {
         if (this.hitTestSourceRequested) return;
         this.hitTestSourceRequested = true;
 
