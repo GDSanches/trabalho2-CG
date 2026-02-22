@@ -112,6 +112,10 @@ body {
     background: rgba(52, 152, 219, 0.7);
 }
 
+.btn-remove {
+    background: rgba(230, 126, 34, 0.7);
+}
+
 .btn-danger {
     background: rgba(231, 76, 60, 0.5);
     font-size: 0.85rem;

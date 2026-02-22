@@ -10,11 +10,16 @@ let cubagemModule, pickingModule;
 let currentMode = 'cubagem';
 let xrSession = null;
 
+// Raycaster para detecção de caixas a remover
+const raycaster = new THREE.Raycaster();
+let removalCandidate = null; // { mesh, box } da caixa atualmente mirada
+
 // ========== DOM ==========
 const overlay       = document.getElementById('overlay');
 const btnStartAR    = document.getElementById('btn-start-ar');
 const btnNewBox     = document.getElementById('btn-new-box');
 const btnPlace      = document.getElementById('btn-place');
+const btnRemove     = document.getElementById('btn-remove');
 const btnMode       = document.getElementById('btn-mode');
 const btnReset      = document.getElementById('btn-reset');
 const hud           = document.getElementById('hud');
@@ -71,7 +76,6 @@ async function startARSession() {
 
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(xrSession);
-
         await hitTestManager.requestHitTestSource(xrSession);
 
         btnStartAR.classList.add('hidden');
@@ -96,30 +100,78 @@ function onSessionEnd() {
 }
 
 // ========== Loop de Renderização ==========
-function onXRFrame(timestamp, frame) {
+function onXRFrame(_timestamp, frame) {
     if (!frame) return;
 
     const refSpace = renderer.xr.getReferenceSpace();
     hitTestManager.update(frame, refSpace);
 
-    const module = getActiveModule();
+    const module  = getActiveModule();
     const placed  = isContainerPlaced();
 
-    if (hitTestManager.isHitDetected()) {
-        const worldPos = hitTestManager.getHitPosition();
-
-        if (placed && module.currentBox) {
-            // Preview segue onde a câmera aponta dentro dos limites
-            module.updatePreviewFromWorld(worldPos);
-        } else if (!placed) {
+    if (placed) {
+        if (module.currentBox) {
+            // Preview da nova caixa segue onde a câmera aponta
+            clearRemovalCandidate();
+            if (hitTestManager.isHitDetected()) {
+                module.updatePreviewFromWorld(hitTestManager.getHitPosition());
+            }
+        } else {
+            // Sem caixa em mão: raycasting para realçar caixa mirada
+            updateRemovalCandidate(module);
+        }
+    } else {
+        clearRemovalCandidate();
+        if (hitTestManager.isHitDetected()) {
             statusMsg.textContent = 'Superfície detectada! Toque "Posicionar" para colocar ' +
                 (currentMode === 'cubagem' ? 'o palete.' : 'a caçamba.');
+        } else {
+            statusMsg.textContent = 'Aponte para uma superfície plana...';
         }
-    } else if (!placed) {
-        statusMsg.textContent = 'Aponte para uma superfície plana...';
     }
 
     renderer.render(scene, camera);
+}
+
+// ========== Raycasting para Remoção ==========
+function updateRemovalCandidate(module) {
+    const xrCam = renderer.xr.getCamera();
+    const origin = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    xrCam.getWorldPosition(origin);
+    xrCam.getWorldDirection(direction);
+    raycaster.set(origin, direction);
+
+    const meshes = module.getAllMeshes();
+    // Raycasta recursivamente para pegar filhos (wireframe está dentro do mesh)
+    const hits = raycaster.intersectObjects(meshes, false);
+
+    const hitMesh = hits.length > 0 ? hits[0].object : null;
+
+    // Atualizar candidato
+    if (removalCandidate && removalCandidate.mesh !== hitMesh) {
+        // Remover destaque do anterior
+        const prevBox = removalCandidate.mesh.userData.box;
+        if (prevBox) prevBox.setRemovalHighlight(false);
+        removalCandidate = null;
+    }
+
+    if (hitMesh && hitMesh.userData.box) {
+        removalCandidate = { mesh: hitMesh, box: hitMesh.userData.box };
+        hitMesh.userData.box.setRemovalHighlight(true);
+        statusMsg.textContent =
+            `Mirando caixa ${hitMesh.userData.box.getColorName()} — toque "Remover" para retirar.`;
+    } else if (!removalCandidate) {
+        statusMsg.textContent = 'Aponte para uma caixa para removê-la ou gere uma nova.';
+    }
+}
+
+function clearRemovalCandidate() {
+    if (removalCandidate) {
+        const box = removalCandidate.mesh.userData.box;
+        if (box) box.setRemovalHighlight(false);
+        removalCandidate = null;
+    }
 }
 
 // ========== Helpers ==========
@@ -138,17 +190,17 @@ function showFeedback(msg, type = 'success') {
     feedbackEl.className = type;
     feedbackEl.classList.remove('hidden');
     feedbackEl.style.animation = 'none';
-    feedbackEl.offsetHeight; // reflow
+    feedbackEl.offsetHeight;
     feedbackEl.style.animation = '';
-    setTimeout(() => feedbackEl.classList.add('hidden'), 2200);
+    setTimeout(() => feedbackEl.classList.add('hidden'), 2500);
 }
 
 function updateHUD(box) {
-    boxDims.textContent       = box ? box.getDimsText()   : '--';
-    boxVol.textContent        = box ? box.getVolumeText() : '--';
+    boxDims.textContent = box ? box.getDimsText()   : '--';
+    boxVol.textContent  = box ? box.getVolumeText() : '--';
     boxColorInd.style.backgroundColor = box ? box.getCSSColor() : 'transparent';
-    boxColorInd.title         = box ? box.getColorName()  : '';
-    countEl.textContent       = getActiveModule().getBoxCount();
+    boxColorInd.title   = box ? box.getColorName()  : '';
+    countEl.textContent = getActiveModule().getBoxCount();
 }
 
 // ========== Botões ==========
@@ -165,6 +217,7 @@ btnNewBox.addEventListener('click', () => {
         );
         return;
     }
+    clearRemovalCandidate();
     const module = getActiveModule();
     const box = module.generateNewBox();
     updateHUD(box);
@@ -174,41 +227,68 @@ btnNewBox.addEventListener('click', () => {
 btnPlace.addEventListener('click', () => {
     const module = getActiveModule();
 
-    // 1. Colocar o container (palete ou caçamba)
+    // Posicionar container (palete ou caçamba)
     if (!isContainerPlaced()) {
         const pos = hitTestManager.getHitPosition();
         if (!pos) { showFeedback('Nenhuma superfície detectada!', 'error'); return; }
 
         if (currentMode === 'cubagem') {
             cubagemModule.placePallet(pos);
-            statusMsg.textContent = 'Palete posicionado! Gere uma nova caixa.';
             showFeedback('Palete posicionado!', 'success');
+            statusMsg.textContent = 'Palete posicionado! Gere uma nova caixa.';
         } else {
             pickingModule.placeTruck(pos);
-            statusMsg.textContent = 'Caçamba posicionada! Gere uma nova caixa.';
             showFeedback('Caçamba posicionada!', 'success');
+            statusMsg.textContent = 'Caçamba posicionada! Gere uma nova caixa.';
         }
         return;
     }
 
-    // 2. Empilhar caixa
+    // Empilhar caixa
     if (!module.currentBox) {
         showFeedback('Gere uma nova caixa primeiro!', 'error');
         return;
     }
 
     const result = module.placeBox();
+    showFeedback(result.message, result.success ? 'success' : 'error');
     if (result.success) {
-        showFeedback(result.message, 'success');
         updateHUD(null);
-        statusMsg.textContent = 'Caixa posicionada! Gere outra.';
-    } else {
-        showFeedback(result.message, 'error');
+        statusMsg.textContent = 'Caixa posicionada! Gere outra ou remova uma existente.';
     }
     countEl.textContent = module.getBoxCount();
 });
 
+btnRemove.addEventListener('click', () => {
+    const module = getActiveModule();
+
+    if (module.currentBox) {
+        showFeedback('Cancele ou posicione a caixa atual antes de remover.', 'error');
+        return;
+    }
+
+    if (!removalCandidate) {
+        showFeedback('Aponte para uma caixa para removê-la.', 'error');
+        return;
+    }
+
+    const targetMesh = removalCandidate.mesh;
+    // Limpar destaque antes de tentar remover (o módulo vai tirar o mesh da cena)
+    const box = targetMesh.userData.box;
+    if (box) box.setRemovalHighlight(false);
+    removalCandidate = null;
+
+    const result = module.removeBox(targetMesh);
+    showFeedback(result.message, result.success ? 'success' : 'error');
+    if (result.success) {
+        countEl.textContent = module.getBoxCount();
+        statusMsg.textContent = 'Caixa removida! Aponte para outra ou gere uma nova.';
+    }
+});
+
 btnMode.addEventListener('click', () => {
+    clearRemovalCandidate();
+
     if (currentMode === 'cubagem') {
         currentMode = 'picking';
         cubagemModule.deactivate();
@@ -222,16 +302,18 @@ btnMode.addEventListener('click', () => {
         btnMode.textContent = 'Modo: Picking';
         currentModeEl.textContent = 'Cubagem';
     }
+
     updateHUD(null);
     statusMsg.textContent = isContainerPlaced()
-        ? 'Gere uma nova caixa.'
+        ? 'Gere uma nova caixa ou aponte para remover.'
         : 'Aponte para uma superfície e toque "Posicionar".';
 });
 
 btnReset.addEventListener('click', () => {
+    clearRemovalCandidate();
     cubagemModule.reset();
     pickingModule.reset();
     updateHUD(null);
-    statusMsg.textContent = 'Resetado! Aponte para uma superfície.';
     showFeedback('Tudo resetado!', 'success');
+    statusMsg.textContent = 'Resetado! Aponte para uma superfície.';
 });

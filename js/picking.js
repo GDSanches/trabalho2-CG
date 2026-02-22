@@ -173,6 +173,43 @@ export class PickingModule {
         return { success: true, message: `Caixa carregada! (Total: ${this.boxCount})` };
     }
 
+    getAllMeshes() {
+        return this.placedBoxes.map(e => e.mesh);
+    }
+
+    _hasBoxOnTop(targetEntry) {
+        const { box: targetBox, mesh: targetMesh } = targetEntry;
+        for (const { box, mesh } of this.placedBoxes) {
+            if (mesh === targetMesh) continue;
+            if (mesh.position.y <= targetMesh.position.y) continue;
+
+            const dx = Math.abs(mesh.position.x - targetMesh.position.x);
+            const dz = Math.abs(mesh.position.z - targetMesh.position.z);
+            const overlapX = (box.width + targetBox.width) / 2;
+            const overlapZ = (box.depth + targetBox.depth) / 2;
+
+            if (dx < overlapX && dz < overlapZ) return true;
+        }
+        return false;
+    }
+
+    removeBox(targetMesh) {
+        const entry = this.placedBoxes.find(e => e.mesh === targetMesh);
+        if (!entry) return { success: false, message: 'Caixa não encontrada.' };
+
+        if (this._hasBoxOnTop(entry)) {
+            return {
+                success: false,
+                message: `Não é possível remover! Há uma caixa por cima. Remova-a primeiro.`
+            };
+        }
+
+        targetMesh.parent && targetMesh.parent.remove(targetMesh);
+        this.placedBoxes = this.placedBoxes.filter(e => e.mesh !== targetMesh);
+        this.boxCount--;
+        return { success: true, message: `Caixa ${entry.box.getColorName()} removida!` };
+    }
+
     _removeCurrentBox() {
         if (this.currentBox && this.currentBox.mesh.parent) {
             this.currentBox.mesh.parent.remove(this.currentBox.mesh);

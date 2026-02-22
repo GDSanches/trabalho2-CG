@@ -104,6 +104,17 @@ export class Box {
         }
     }
 
+    // Destaque amarelo: caixa sendo mirada para remoção
+    setRemovalHighlight(enabled) {
+        if (enabled) {
+            this.mesh.material.emissive = new THREE.Color(0xffaa00);
+            this.mesh.material.emissiveIntensity = 0.6;
+        } else {
+            this.mesh.material.emissive = new THREE.Color(0x000000);
+            this.mesh.material.emissiveIntensity = 0;
+        }
+    }
+
     static createRandom() {
         return new Box();
     }
