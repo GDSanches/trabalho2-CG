@@ -10,16 +10,16 @@ let cubagemModule, pickingModule;
 let currentMode = 'cubagem';
 let xrSession = null;
 
-// Raycaster para detecção de caixas a remover
+// Raycaster para detecção de caixas a reposicionar
 const raycaster = new THREE.Raycaster();
 let removalCandidate = null; // { mesh, box } da caixa atualmente mirada
 
 // ========== DOM ==========
-const overlay       = document.getElementById('overlay');
-const btnStartAR    = document.getElementById('btn-start-ar');
-const btnNewBox     = document.getElementById('btn-new-box');
-const btnPlace      = document.getElementById('btn-place');
-const btnRemove     = document.getElementById('btn-remove');
+const overlay         = document.getElementById('overlay');
+const btnStartAR      = document.getElementById('btn-start-ar');
+const btnNewBox       = document.getElementById('btn-new-box');
+const btnPlace        = document.getElementById('btn-place');
+const btnReposition   = document.getElementById('btn-reposition');
 const btnMode       = document.getElementById('btn-mode');
 const btnReset      = document.getElementById('btn-reset');
 const hud           = document.getElementById('hud');
@@ -133,7 +133,7 @@ function onXRFrame(_timestamp, frame) {
     renderer.render(scene, camera);
 }
 
-// ========== Raycasting para Remoção ==========
+// ========== Raycasting para Reposicionamento ==========
 function updateRemovalCandidate(module) {
     const xrCam = renderer.xr.getCamera();
     const origin = new THREE.Vector3();
@@ -160,9 +160,9 @@ function updateRemovalCandidate(module) {
         removalCandidate = { mesh: hitMesh, box: hitMesh.userData.box };
         hitMesh.userData.box.setRemovalHighlight(true);
         statusMsg.textContent =
-            `Mirando caixa ${hitMesh.userData.box.getColorName()} — toque "Remover" para retirar.`;
+            `Mirando caixa ${hitMesh.userData.box.getColorName()} — toque "Reposicionar" para mover.`;
     } else if (!removalCandidate) {
-        statusMsg.textContent = 'Aponte para uma caixa para removê-la ou gere uma nova.';
+        statusMsg.textContent = 'Aponte para uma caixa para reposicioná-la ou gere uma nova.';
     }
 }
 
@@ -259,30 +259,28 @@ btnPlace.addEventListener('click', () => {
     countEl.textContent = module.getBoxCount();
 });
 
-btnRemove.addEventListener('click', () => {
+btnReposition.addEventListener('click', () => {
     const module = getActiveModule();
 
     if (module.currentBox) {
-        showFeedback('Cancele ou posicione a caixa atual antes de remover.', 'error');
+        showFeedback('Posicione a caixa atual antes de reposicionar outra.', 'error');
         return;
     }
 
     if (!removalCandidate) {
-        showFeedback('Aponte para uma caixa para removê-la.', 'error');
+        showFeedback('Aponte para uma caixa para reposicioná-la.', 'error');
         return;
     }
 
     const targetMesh = removalCandidate.mesh;
-    // Limpar destaque antes de tentar remover (o módulo vai tirar o mesh da cena)
-    const box = targetMesh.userData.box;
-    if (box) box.setRemovalHighlight(false);
     removalCandidate = null;
 
-    const result = module.removeBox(targetMesh);
+    const result = module.repositionBox(targetMesh);
     showFeedback(result.message, result.success ? 'success' : 'error');
     if (result.success) {
         countEl.textContent = module.getBoxCount();
-        statusMsg.textContent = 'Caixa removida! Aponte para outra ou gere uma nova.';
+        statusMsg.textContent = 'Aponte para o novo local e toque "Posicionar".';
+        updateHUD(module.currentBox);
     }
 });
 

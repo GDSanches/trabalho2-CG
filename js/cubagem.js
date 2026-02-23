@@ -161,23 +161,31 @@ export class CubagemModule {
         return false;
     }
 
-    // Tenta remover a caixa cujo mesh é targetMesh.
-    // Retorna { success, message }
-    removeBox(targetMesh) {
+    // Retira a caixa do estado "posicionada" e a torna móvel novamente como currentBox.
+    repositionBox(targetMesh) {
         const entry = this.placedBoxes.find(e => e.mesh === targetMesh);
         if (!entry) return { success: false, message: 'Caixa não encontrada.' };
 
         if (this._hasBoxOnTop(entry)) {
             return {
                 success: false,
-                message: `Não é possível remover! Há uma caixa por cima. Remova-a primeiro.`
+                message: 'Não é possível reposicionar! Há uma caixa por cima. Mova-a primeiro.'
             };
         }
 
-        targetMesh.parent && targetMesh.parent.remove(targetMesh);
+        // Cancelar caixa em mão, se houver
+        this._removeCurrentBox();
+
         this.placedBoxes = this.placedBoxes.filter(e => e.mesh !== targetMesh);
         this.boxCount--;
-        return { success: true, message: `Caixa ${entry.box.getColorName()} removida!` };
+
+        // A caixa volta a ser o currentBox, permanece no grupo para o preview seguir o hit test
+        entry.box.setPreviewMode(true);
+        entry.box.setRemovalHighlight(false);
+        this.currentBox = entry.box;
+        this.previewValid = false;
+
+        return { success: true, message: `Caixa ${entry.box.getColorName()} pronta para reposicionar!` };
     }
 
     _removeCurrentBox() {

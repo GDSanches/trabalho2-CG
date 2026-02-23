@@ -193,21 +193,28 @@ export class PickingModule {
         return false;
     }
 
-    removeBox(targetMesh) {
+    repositionBox(targetMesh) {
         const entry = this.placedBoxes.find(e => e.mesh === targetMesh);
         if (!entry) return { success: false, message: 'Caixa não encontrada.' };
 
         if (this._hasBoxOnTop(entry)) {
             return {
                 success: false,
-                message: `Não é possível remover! Há uma caixa por cima. Remova-a primeiro.`
+                message: 'Não é possível reposicionar! Há uma caixa por cima. Mova-a primeiro.'
             };
         }
 
-        targetMesh.parent && targetMesh.parent.remove(targetMesh);
+        this._removeCurrentBox();
+
         this.placedBoxes = this.placedBoxes.filter(e => e.mesh !== targetMesh);
         this.boxCount--;
-        return { success: true, message: `Caixa ${entry.box.getColorName()} removida!` };
+
+        entry.box.setPreviewMode(true);
+        entry.box.setRemovalHighlight(false);
+        this.currentBox = entry.box;
+        this.previewValid = false;
+
+        return { success: true, message: `Caixa ${entry.box.getColorName()} pronta para reposicionar!` };
     }
 
     _removeCurrentBox() {
